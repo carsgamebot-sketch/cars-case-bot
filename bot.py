@@ -277,7 +277,7 @@ def ensure_user(
 ):
 
     execute("""
-    INSERT OR IGNORE INTO users
+    INSERT INTO users
     (
         user_id,
         username,
@@ -286,6 +286,7 @@ def ensure_user(
         race_games
     )
     VALUES (?, ?, 5000, 0, 0)
+    ON CONFLICT (user_id) DO NOTHING
     """, (
         user_id,
         username or ""
@@ -2777,4 +2778,4 @@ if __name__ == "__main__":
 
     asyncio.run(
         main()
-  )
+    )
