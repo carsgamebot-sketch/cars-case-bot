@@ -585,6 +585,8 @@ async def open_case(
 
     user_id = callback.from_user.id
 
+    ensure_user(user_id, callback.from_user.username)
+
     kind = callback.data.split(":")[1]
 
     if kind == "normal":
@@ -626,7 +628,7 @@ async def open_case(
         level,
         exclusive
     )
-    VALUES (?, ?, ?, ?, ?, 1, 0)
+    VALUES (?, ?, ?, ?, ?, 1, FALSE)
     """, (
         user_id,
         name,
@@ -673,6 +675,8 @@ async def open_case(
 async def cases_callback(
     callback: CallbackQuery
 ):
+
+    ensure_user(callback.from_user.id, callback.from_user.username)
 
     await callback.message.edit_text(
         "🎁 <b>КЕЙСЫ</b>\n\nВыбирай:",
@@ -802,6 +806,8 @@ async def garage(
 async def garage_callback(
     callback: CallbackQuery
 ):
+
+    ensure_user(callback.from_user.id, callback.from_user.username)
 
     await show_garage(
         callback.message,
@@ -2252,7 +2258,7 @@ async def admin_stats(
     exclusive = fetchone("""
     SELECT COUNT(*) AS value
     FROM cars
-    WHERE exclusive=1
+    WHERE exclusive=TRUE
     """)["value"]
 
     wins = fetchone("""
@@ -2534,7 +2540,7 @@ async def give_exclusive(
         level,
         exclusive
     )
-    VALUES (?, ?, ?, ?, ?, 1, 1)
+    VALUES (?, ?, ?, ?, ?, 1, TRUE)
     """, (
         user_id,
         name,
@@ -2584,6 +2590,10 @@ async def give_exclusive(
 async def exclusive_back(
     callback: CallbackQuery
 ):
+
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer("❌ Доступ запрещён.", show_alert=True)
+        return
 
     await callback.message.edit_text(
 
@@ -2676,32 +2686,30 @@ async def admin_clear_races(
     if message.from_user.id != ADMIN_ID:
         return
 
-    count = 0
+    # Очищаем только ожидающие гонки. Уже запущенные гонки
+    # не трогаем, чтобы не потерять ставки и не допустить двойную выплату.
+    waiting = [
+        (code, room)
+        for code, room in list(race_rooms.items())
+        if not room.get("running")
+    ]
 
-    for code, room in list(
-        race_rooms.items()
-    ):
+    for code, room in waiting:
+        change_money(room["player1"], room["bet"])
+        if room.get("player2"):
+            change_money(room["player2"], room["bet"])
 
-        change_money(
-            room["player1"],
-            room["bet"]
-        )
+        player_race.pop(room["player1"], None)
+        if room.get("player2"):
+            player_race.pop(room["player2"], None)
+        race_rooms.pop(code, None)
 
-        if room["player2"]:
-
-            change_money(
-                room["player2"],
-                room["bet"]
-            )
-
-        count += 1
-
-    race_rooms.clear()
-    player_race.clear()
+        execute("DELETE FROM races WHERE code=?", (code,))
 
     await message.answer(
-        f"🧹 Очищено гонок: {count}\n"
-        "💰 Все ставки возвращены."
+        f"🧹 Очищено ожидающих гонок: {len(waiting)}\n"
+        "💰 Ставки возвращены.\n"
+        "🏁 Уже запущенные гонки не трогались."
     )
 
 
